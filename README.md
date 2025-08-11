@@ -1,4 +1,4 @@
-# This code can be use to reproduce the results of the Paper "Lattice-dependent orientational order in active crystals" by Till Welker and Ricard Alert
+# This Julia code can be use to reproduce the results of the Paper "Lattice-dependent orientational order in active crystals" by Till Welker and Ricard Alert
 
 # The code is structured as follows 
 
