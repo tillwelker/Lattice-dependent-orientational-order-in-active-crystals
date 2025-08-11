@@ -1,4 +1,4 @@
-# This code can be use to reproduce the results of the Paper "Lattice-dependent orientational order in active crystals" by Till Welker and Ricard Alert
+# This Julia code can be use to reproduce the results of the Paper "Lattice-dependent orientational order in active crystals" by Till Welker and Ricard Alert
 
 # The code is structured as follows 
 
@@ -64,8 +64,7 @@ function simulation1D(Γ0,Ω,n,dt,ttot,tsave) # Run for simulation in one dimens
 end
 
 
-
-function get_torque2D(θ,Γ0,Ω)   # This function calculates the torques. It is called by the simulation2D method
+function get_torque2D_square(θ,Γ0,Ω)   # This function calculates the torques. It is called by the simulation2D method
     θ_l = circshift(θ, (0, 1)) # left neighbours
     θ_r = circshift(θ, (0, -1)) # right neighbours
     θ_d = circshift(θ, (-1, 0)) # downwards neighbours
@@ -78,21 +77,52 @@ end
 
 
 
-function simulation2D(Γ0,Ω,n,dt,ttot,tsave) # Run for simulation in two dimension. Set the parameters below and call the function to run simulation
+function simulation2D_square(Γ0,Ω,n,dt,ttot,tsave) # Run for simulation in two dimension. Set the parameters below and call the function to run simulation
     θ = 2*pi*rand(n,n)  # Random initial condition
-    mkdir("2D_Gamma$(Γ0)_Omega$(Ω)")
+    mkdir("2D_square_Gamma$(Γ0)_Omega$(Ω)")
     for it in 1:ttot  # Iteration in time
-        Γ = get_torque2D(θ,Γ0,Ω) # Calucalte Torques
+        Γ = get_torque2D_square(θ,Γ0,Ω) # Calucalte Torques
         θ = θ .+ Γ .*dt .+ sqrt(2*dt).* randn(n) # Updates Position
         if it%tsave == 0 # Save Data
             counter = round(Int, it/tsave)
-            CSV.write("2D_Gamma$(Γ0)_Omega$(Ω)/$counter.csv",  Tables.table(θ), writeheader=false)
+            CSV.write("2D_square_Gamma$(Γ0)_Omega$(Ω)/$counter.csv",  Tables.table(θ), writeheader=false)
             print("$(it/ttot*100)% ")
         end
     end
 end
 
 
+function get_torque2D_triangular(θ,Γ0,Ω)   # This function calculates the torques. It is called by the simulation2D method
+    # the lattice sides are indexed using the “double-width” convention given in https://www.redblobgames.com/grids/hexagons/ note that here the first index refers to the line and the second to the row
+
+    θ_l = circshift(θ, (0, 2)) # left neighbours
+    θ_r = circshift(θ, (0, -2)) # right neighbours
+    θ_lu = circshift(θ, (-1, 1)) # left-upwards neighbours
+    θ_ld = circshift(θ, (1, 1)) # left-downwards neighbours
+    θ_ru = circshift(θ, (-1, -1)) # right-upwards neighbours
+    θ_rd = circshift(θ, (1, -1)) # right-downwards neighbours
+
+    Γ_XY = Γ0*(Ω+1)/2*(sin.(θ_l.-θ).+sin.(θ_r.-θ).+sin.(θ_ld.-θ).+sin.(θ_lu.-θ).+sin.(θ_rd.-θ).+sin.(θ_ru.-θ)) # XY alignment
+    Γ_MA = Γ0*(Ω-1)/2*(sin.(-θ_l.-θ).+sin.(-θ_r.-θ).+sin.(2*pi/3 .- θ_ld.-θ).+sin.(4*pi/3 .- θ_lu.-θ).+sin.(4*pi/3 .-θ_rd.-θ).+sin.(2*pi/3 .- θ_ru.-θ)) # Mirror alignment on a triangular lattice
+
+    return Γ_XY .+ Γ_MA
+end
+
+
+
+function simulation2D_triangular(Γ0,Ω,n,dt,ttot,tsave) # Run for simulation in two dimension. Set the parameters below and call the function to run simulation
+    θ = 2*pi*rand(n,2*n)  # Random initial condition
+    mkdir("2D_triangular_Gamma$(Γ0)_Omega$(Ω)")
+    for it in 1:ttot  # Iteration in time
+        Γ = get_torque2D_triangular(θ,Γ0,Ω) # Calucalte Torques
+        θ = θ .+ Γ .*dt .+ sqrt(2*dt).* randn(n) # Updates Position
+        if it%tsave == 0 # Save Data
+            counter = round(Int, it/tsave)
+            CSV.write("2D_triangular_Gamma$(Γ0)_Omega$(Ω)/$counter.csv",  Tables.table(θ), writeheader=false)
+            print("$(it/ttot*100)% ")
+        end
+    end
+end
 
 
 # ---- 3. Read in saved data ----
@@ -103,13 +133,17 @@ function readin1D(Γ0,Ω,t) # Read in the "t"th saved file for the simulation wi
     return θ
 end
 
-function readin2D(Γ0,Ω,t) # Read in the "t"th saved file for the simulation with Γ0 and Ω for two dimension
-    data = CSV.File("2D_Gamma$(Γ0)_Omega$(Ω)/$t.csv"; header=false) |> DataFrame
+function readin2D_square(Γ0,Ω,t) # Read in the "t"th saved file for the simulation with Γ0 and Ω for two dimension
+    data = CSV.File("2D_square_Gamma$(Γ0)_Omega$(Ω)/$t.csv"; header=false) |> DataFrame
     θ = Matrix(data)
     return θ
 end
 
-
+function readin2D_triangular(Γ0,Ω,t) # Read in the "t"th saved file for the simulation with Γ0 and Ω for two dimension
+    data = CSV.File("2D_triangular_Gamma$(Γ0)_Omega$(Ω)/$t.csv"; header=false) |> DataFrame
+    θ = Matrix(data)
+    return θ
+end
 
 # ---- 4. Analysis of order ----
 
@@ -148,13 +182,14 @@ end
 
 
 
-function spin_configuration_2D(Γ0,Ω,t) # Plot configurations of Spins on a square lattice
-    θ = readin2D(Γ0,Ω,t)    # Read in file
+function spin_configuration_2D_square(Γ0,Ω,t) # Plot configurations of Spins on a square lattice
+    θ = readin2D_square(Γ0,Ω,t)    # Read in file
 
     setvis("","",(2,2))  # Set up plot
     plt.xlim(0,11)
     plt.ylim(0,11)
-    gca().axis("off")
+    plt.xticks([])
+    plt.yticks([])
 
     for i in 1:10   # Iterate over 10x10 spins
         for j in 1:10
@@ -162,24 +197,53 @@ function spin_configuration_2D(Γ0,Ω,t) # Plot configurations of Spins on a squ
             plt.scatter([i],[j], c="black",s = 5)
         end
     end
-
-    plt.savefig("2D_spin_configuration_Gamma$(Γ0)_Omega$(Ω).pdf", dpi = 300,bbox_inches = "tight",pad_inches=0.01) # Save figure
+    plt.savefig("2D_square_spin_configuration_Gamma$(Γ0)_Omega$(Ω).pdf", dpi = 300,bbox_inches = "tight",pad_inches=0.01) # Save figure
 end
 
 
+function spin_configuration_2D_triangular(Γ0,Ω,t) # Plot configurations of Spins on a triangular lattice
+    θ = readin2D_triangular(Γ0,Ω,t)    # Read in file
+
+    setvis("","",(2,2))  # Set up plot and create mash
+    plt.xlim(0.5,9.5)
+    plt.ylim(sqrt(3)/2*0.5,sqrt(3)/2*9.5)
+    plt.xticks([])
+    plt.yticks([])
+    for i in 1:30
+        plt.plot([i,-20+i],[-sqrt(3)*20,0],color = "black",alpha = 0.1)
+        plt.plot([-10+i,i],[-sqrt(3)*10,0],color = "black",alpha = 0.1)
+        plt.plot([0,12],[-sqrt(3)/2*i,-sqrt(3)/2*i],color = "black",alpha = 0.1)
+    end
+
+    for i in 1:20   # Iterate over 10x10 spins. We again use the “double-width” convention given in https://www.redblobgames.com/grids/hexagons/ note that here the first index refers to the line and the second to the row
+        for j in 1:10
+            if (i+j)%2 != 0
+                continue
+            end
+            if j%2 == 0
+                plt.plot([i/2,i/2+0.4*cos(θ[j,i])],[sqrt(3)/2*j,sqrt(3)/2*j+0.4*sin(θ[j,i])],color = plt.get_cmap("hsv")(mod(θ[j,i],2*pi)/2/pi)) # Plot orientations
+                plt.scatter([i/2],[sqrt(3)/2*j], c="black",s = 5)
+            else
+                plt.plot([i/2,i/2+0.4*cos(θ[j,i])],[sqrt(3)/2*j,sqrt(3)/2*j+0.4*sin(θ[j,i])],color = plt.get_cmap("hsv")(mod(θ[j,i],2*pi)/2/pi)) # Plot orientations
+                plt.scatter([i/2],[sqrt(3)/2*j], c="black",s = 5)
+            end
+        end
+    end
+    plt.savefig("2D_triangular_spin_configuration_Gamma$(Γ0)_Omega$(Ω).pdf", dpi = 300,bbox_inches = "tight",pad_inches=0.01) # Save figure
+end
 
 # ---- 6. Set Parameters ----
 
-Γ0 = 10 # This is the rescaled torque "\tilde Γ0 * l/a" in the paper
+Γ0 = -10 # This is the rescaled torque "\tilde Γ0 * l/a" in the paper
 Ω = -1  # This is the distance dependence parameter
 
 n = 1000 # In 1D: number of spins. In 2D: nxn spins
-dt = 0.0001 # Timestep
-ttot = 1000000 # Number of simulated timesteps
-tsave = 1000 # A file is saved every tsave timesteps
+dt = 0.0001  # Timestep 
+ttot = Int(100/dt) # Number of simulated timesteps 
+tsave = Int(1/dt) # A file is saved every tsave timesteps
 
 
 # ---- 7. Call Functions Here (The functions called here are an example) ----
 
 simulation1D(Γ0,Ω,n,dt,ttot,tsave)
-spin_configuration_1D(Γ0,Ω,1000)
+spin_configuration_1D(Γ0,Ω,100)
